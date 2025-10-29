@@ -1,4 +1,3 @@
-# Socket Security GitHub Actions Workflow
 name: socket-security-workflow
 run-name: Socket Security Github Action
 
@@ -21,23 +20,27 @@ jobs:
       contents: read
       pull-requests: write
     runs-on: ubuntu-latest
-
+    
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
 
-      # --- Reachability only: writes .socket.facts.json, does NOT submit ---
+      # --- Reachability only (npm CLI) -> writes .socket.facts.json ---
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Run reachability (npm CLI) -> produce .socket.facts.json
+      - name: Reachability: generate .socket.facts.json
+        env:
+          SOCKET_SECURITY_API_KEY: ${{ secrets.SOCKET_SECURITY_API_KEY }}
         run: |
-          npx -y socket@latest scan reach
-          test -f .socket.facts.json && echo "Reachability facts generated."
+          npx -y socket@latest scan reach . \
+            --org your-org-slug \
+            --no-banner --no-spinner
+          test -f .socket.facts.json && echo "✅ Reachability facts generated"
 
-      # --- Python CLI: submit scan using the facts file ---
+      # --- Python CLI uses facts file to perform the scan/PR integration ---
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -57,7 +60,6 @@ jobs:
             PR_NUMBER=${{ github.event.issue.number }}
           fi
 
-          # Explicitly pass facts file (auto-detect also works, this is clearer)
           socketcli \
             --target-path "$GITHUB_WORKSPACE" \
             --scm github \
