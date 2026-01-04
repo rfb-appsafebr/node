@@ -7,7 +7,7 @@ on:
 
 jobs:
   sbom:
-    uses: ./.github/workflows/sbom-syft.yml
+    uses: ./.github/workflows/syft.yml
     with:
       target: "."
       artifact_name: "sbom-syft"
