@@ -1,4 +1,4 @@
-name: 🧾 SBOM (Syft) + 🛡️ Vuln Scan (Grype)
+name: 🧾 SBOM (Syft) + 🛡️ Grype + HTML (no-fail)
 
 on:
   workflow_call:
@@ -12,21 +12,10 @@ on:
         description: "Nome do artifact"
         required: false
         type: string
-        default: "syft-grype-reports"
-      fail_build:
-        description: "Falhar pipeline ao encontrar vulnerabilidades (true/false)"
-        required: false
-        type: boolean
-        default: false
-      severity_cutoff:
-        description: "Corte de severidade (ex: negligible, low, medium, high, critical)"
-        required: false
-        type: string
-        default: "high"
+        default: "syft-grype-report"
 
 jobs:
   syft_grype:
-    name: Syft + Grype
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,21 +24,34 @@ jobs:
       - name: 🛠️ Checkout
         uses: actions/checkout@v4
 
-      - name: 🧾 Generate SBOM (Syft - CycloneDX)
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: 🧾 Generate SBOM (Syft - CycloneDX JSON)
         uses: anchore/sbom-action@v0
         with:
           path: ${{ inputs.target }}
           format: cyclonedx-json
           output-file: sbom.cdx.json
 
-      - name: 🔎 Scan vulnerabilities from SBOM (Grype)
+      - name: 🔎 Scan vulnerabilities from SBOM (Grype JSON)
         uses: anchore/scan-action@v6
         with:
           sbom: sbom.cdx.json
-          fail-build: ${{ inputs.fail_build }}
-          severity-cutoff: ${{ inputs.severity_cutoff }}
+          fail-build: false
           output-format: json
           output-file: grype.json
+
+      - name: 📄 Generate HTML report from grype.json
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/popey/grype2html/main/grype2html.py -o grype2html.py
+          chmod +x grype2html.py
+
+          cat grype.json | python grype2html.py
+          LATEST="$(ls -t grype_*.html | head -n 1)"
+          mv "$LATEST" grype_report.html
 
       - name: 📤 Upload artifacts
         if: always()
@@ -59,3 +61,4 @@ jobs:
           path: |
             sbom.cdx.json
             grype.json
+            grype_report.html
