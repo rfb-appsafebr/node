@@ -1,4 +1,4 @@
-name: 🔁 Run SBOM - Syft
+name: 🔁 SBOM + Vuln
 
 on:
   pull_request:
@@ -6,9 +6,10 @@ on:
     branches: [ "main", "master" ]
 
 jobs:
-  sbom:
-    uses: ./.github/workflows/syft.yml
+  sbom_and_vuln:
+    uses: ./.github/workflows/syft-grype.yml
     with:
       target: "."
-      artifact_name: "sbom-syft"
-      upload_artifacts: true
+      fail_build: false
+      severity_cutoff: high
+      artifact_name: "sbom-and-grype"
