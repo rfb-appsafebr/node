@@ -1,0 +1,14 @@
+name: 🚀 SAST - Semgrep (Run)
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  call_semgrep:
+    uses: ./.github/workflows/semgrep.yml
+    with:
+      semgrep_config: "auto"
+      upload_artifacts: true
