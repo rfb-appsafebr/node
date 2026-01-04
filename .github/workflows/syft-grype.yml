@@ -1,0 +1,61 @@
+name: 🧾 SBOM (Syft) + 🛡️ Vuln Scan (Grype)
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: "Alvo do SBOM/scan (ex: '.', 'ghcr.io/org/image:tag', 'docker:imagename:tag')"
+        required: false
+        type: string
+        default: "."
+      artifact_name:
+        description: "Nome do artifact"
+        required: false
+        type: string
+        default: "syft-grype-reports"
+      fail_build:
+        description: "Falhar pipeline ao encontrar vulnerabilidades (true/false)"
+        required: false
+        type: boolean
+        default: false
+      severity_cutoff:
+        description: "Corte de severidade (ex: negligible, low, medium, high, critical)"
+        required: false
+        type: string
+        default: "high"
+
+jobs:
+  syft_grype:
+    name: Syft + Grype
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: 🛠️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🧾 Generate SBOM (Syft - CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          path: ${{ inputs.target }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+
+      - name: 🔎 Scan vulnerabilities from SBOM (Grype)
+        uses: anchore/scan-action@v6
+        with:
+          sbom: sbom.cdx.json
+          fail-build: ${{ inputs.fail_build }}
+          severity-cutoff: ${{ inputs.severity_cutoff }}
+          output-format: json
+          output-file: grype.json
+
+      - name: 📤 Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: |
+            sbom.cdx.json
+            grype.json
