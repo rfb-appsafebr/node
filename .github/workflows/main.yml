@@ -1,0 +1,55 @@
+name: 🚀 Análise SAST - Semgrep (pipx)
+
+on:
+  workflow_call:
+    inputs:
+      semgrep_config:
+        description: "Config do Semgrep (ex: auto, p/ci, ou path local)"
+        required: false
+        type: string
+        default: "auto"
+      upload_artifacts:
+        description: "Fazer upload dos relatórios"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  semgrep_sast:
+    name: SAST Scan (Semgrep)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🛠️ Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: 📦 Instalar pipx + ferramentas
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pipx
+          pipx ensurepath
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          pipx install semgrep
+          pipx install prospector2html
+
+      - name: 🛡️ Executar Semgrep (sem excludes)
+        run: |
+          semgrep --config "${{ inputs.semgrep_config }}" --json --output semgrep.json .
+
+      - name: 📄 Gerar relatório HTML (prospector2html)
+        run: |
+          prospector-html -i semgrep.json -o semgrep_report.html --filter semgrep || true
+
+      - name: 📤 Upload artifacts
+        if: ${{ inputs.upload_artifacts }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report
+          path: |
+            semgrep.json
+            semgrep_report.html
