@@ -1,14 +1,14 @@
-name: 🚀 SAST - Semgrep (Run)
+name: 🔁 Run SBOM - Syft
 
 on:
   pull_request:
   push:
-    branches:
-      - master
+    branches: [ "main", "master" ]
 
 jobs:
-  call_semgrep:
-    uses: ./.github/workflows/semgrep.yml
+  sbom:
+    uses: ./.github/workflows/sbom-syft.yml
     with:
-      semgrep_config: "auto"
+      target: "."
+      artifact_name: "sbom-syft"
       upload_artifacts: true
