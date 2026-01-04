@@ -1,0 +1,55 @@
+name: 🧾 SBOM - Syft
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: "Alvo do SBOM (ex: '.', 'ghcr.io/org/image:tag', 'docker:imagename:tag')"
+        required: false
+        type: string
+        default: "."
+      artifact_name:
+        description: "Nome do artifact"
+        required: false
+        type: string
+        default: "syft-sbom"
+      upload_artifacts:
+        description: "Upload dos arquivos gerados"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  syft_sbom:
+    name: Generate SBOM (Syft)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: 🛠️ Checkout
+        uses: actions/checkout@v4
+
+      # Gera SBOM em SPDX JSON e CycloneDX JSON
+      - name: 🧾 Generate SBOM (Syft via Anchore)
+        uses: anchore/sbom-action@v0
+        with:
+          path: ${{ inputs.target }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: 🧾 Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          path: ${{ inputs.target }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+
+      - name: 📤 Upload artifacts
+        if: ${{ inputs.upload_artifacts }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: |
+            sbom.spdx.json
+            sbom.cdx.json
