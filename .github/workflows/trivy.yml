@@ -1,0 +1,90 @@
+name: 🧱 IaC - Trivy (Config Scan)
+
+on:
+  pull_request:
+  push:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+jobs:
+  trivy_iac:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: 🛠️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔎 Trivy IaC (misconfig) - no fail
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          scanners: "config"
+          format: "json"
+          output: "trivy_iac.json"
+          exit-code: "0"  # não falha por findings
+
+      - name: 🧾 Convert trivy_iac.json → HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends jq
+          test -f trivy_iac.json || echo '{}' > trivy_iac.json
+
+          cat > trivy_iac_report.html <<'HTML'
+          <!doctype html><html lang="pt-BR"><head>
+          <meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+          <title>Trivy IaC Report</title>
+          <style>
+            body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:24px;color:#111}
+            .card{border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:16px}
+            table{width:100%;border-collapse:collapse;margin-top:10px}
+            th,td{border-bottom:1px solid #eee;padding:10px;font-size:13px;text-align:left;vertical-align:top}
+            th{background:#fafafa}
+            code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+          </style></head><body>
+          <div class="card"><h2 style="margin:0">Trivy IaC Report</h2>
+          <div style="color:#555;font-size:13px">Fonte: <code>trivy_iac.json</code></div></div>
+          <div class="card"><div style="overflow:auto;max-height:70vh;border:1px solid #f3f4f6;border-radius:10px">
+          <table><thead><tr>
+            <th>Arquivo</th><th>Issue</th><th>Severidade</th><th>Message</th>
+          </tr></thead><tbody>
+          HTML
+
+          # Trivy config findings costumam vir em .Results[].Misconfigurations[]
+          jq -r '
+            (.Results // [])[] as $r |
+            ($r.Misconfigurations // [])[] |
+            [
+              ($r.Target // ""),
+              (.ID // ""),
+              (.Severity // ""),
+              (.Title // .Message // "")
+            ] |
+            "<tr>"
+            + "<td>" + (.[0]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</td>"
+            + "<td><code>" + (.[1]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</code></td>"
+            + "<td>" + (.[2]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</td>"
+            + "<td>" + (.[3]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</td>"
+            + "</tr>"
+          ' trivy_iac.json >> trivy_iac_report.html || true
+
+          if ! grep -q "<tr>" trivy_iac_report.html; then
+            echo "<tr><td colspan='4'>Nenhum finding encontrado.</td></tr>" >> trivy_iac_report.html
+          fi
+
+          cat >> trivy_iac_report.html <<'HTML'
+          </tbody></table></div></div></body></html>
+          HTML
+
+      - name: 📤 Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-iac-report
+          path: |
+            trivy_iac.json
+            trivy_iac_report.html
