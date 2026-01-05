@@ -10,6 +10,4 @@ jobs:
     uses: ./.github/workflows/syft-grype.yml
     with:
       target: "."
-      fail_build: false
-      severity_cutoff: high
       artifact_name: "sbom-and-grype"
