@@ -21,7 +21,6 @@ jobs:
         with:
           scan-type: "fs"
           scan-ref: "."
-          scanners: "config"
           format: "json"
           output: "trivy_iac.json"
           exit-code: "0"  # não falha por findings
