@@ -1,0 +1,122 @@
+name: 🔐 Secrets - TruffleHog (JSONL → HTML)
+
+on:
+  pull_request:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  trufflehog:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: 🛠️ Checkout (histórico completo)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔎 Run TruffleHog (JSONL) - no fail
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            trufflesecurity/trufflehog:latest \
+            git file:///repo --results="verified,unknown" --json > trufflehog.jsonl || true
+
+          touch trufflehog.jsonl
+
+      - name: 🧾 Convert trufflehog.jsonl → HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > trufflehog_report.html <<'HTML'
+          <!doctype html>
+          <html lang="pt-BR">
+          <head>
+            <meta charset="utf-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1"/>
+            <title>TruffleHog Report</title>
+            <style>
+              body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:24px;color:#111}
+              .card{border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:16px}
+              h1{margin:0 0 6px;font-size:20px}
+              .meta{color:#555;font-size:13px}
+              table{width:100%;border-collapse:collapse;margin-top:10px}
+              th,td{border-bottom:1px solid #eee;padding:10px;font-size:13px;text-align:left;vertical-align:top}
+              th{background:#fafafa}
+              code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h1>TruffleHog Report</h1>
+              <div class="meta">Fonte: <code>trufflehog.jsonl</code></div>
+            </div>
+
+            <div class="card">
+              <h2 style="margin:0 0 8px;font-size:16px;">Findings</h2>
+              <div style="overflow:auto;max-height:70vh;border:1px solid #f3f4f6;border-radius:10px">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Detector</th>
+                      <th>Status</th>
+                      <th>Arquivo</th>
+                      <th>Linha</th>
+                      <th>Commit</th>
+                      <th>Timestamp</th>
+                      <th>Redacted</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+          HTML
+
+          jq -r '
+            select(type=="object") |
+            [
+              (.DetectorName // .DetectorType // "Unknown"),
+              (if (.Verified==true) then "VERIFIED" else "UNVERIFIED/UNKNOWN" end),
+              (.SourceMetadata.Data.Git.file // ""),
+              ((.SourceMetadata.Data.Git.line // "")|tostring),
+              ((.SourceMetadata.Data.Git.commit // "")|tostring|.[0:12]),
+              (.SourceMetadata.Data.Git.timestamp // ""),
+              (.Redacted // "")
+            ] |
+            "<tr>"
+            + "<td>" + (.[0]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</td>"
+            + "<td>" + (.[1]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</td>"
+            + "<td>" + (.[2]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</td>"
+            + "<td>" + (.[3]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</td>"
+            + "<td><code>" + (.[4]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</code></td>"
+            + "<td>" + (.[5]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</td>"
+            + "<td><code>" + (.[6]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</code></td>"
+            + "</tr>"
+          ' trufflehog.jsonl >> trufflehog_report.html || true
+
+          if ! grep -q "<tr>" trufflehog_report.html; then
+            echo "<tr><td colspan='7'>Nenhum finding encontrado.</td></tr>" >> trufflehog_report.html
+          fi
+
+          cat >> trufflehog_report.html <<'HTML'
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </body>
+          </html>
+          HTML
+
+      - name: 📤 Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trufflehog-report
+          path: |
+            trufflehog.jsonl
+            trufflehog_report.html
