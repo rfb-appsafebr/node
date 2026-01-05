@@ -1,0 +1,123 @@
+name: 🔎 Secrets - Gitleaks (JSON → HTML)
+
+on:
+  pull_request:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: 🛠️ Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔎 Run Gitleaks (JSON) - no fail
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            zricethezav/gitleaks:latest \
+            detect --source="/repo" \
+            --report-format json \
+            --report-path "/repo/gitleaks.json" \
+            --redact \
+            --no-banner || true
+
+          # garante arquivo mesmo se vazio
+          if [ ! -f gitleaks.json ]; then
+            echo "[]" > gitleaks.json
+          fi
+
+      - name: 🧾 Convert gitleaks.json → HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > gitleaks_report.html <<'HTML'
+          <!doctype html>
+          <html lang="pt-BR">
+          <head>
+            <meta charset="utf-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1"/>
+            <title>Gitleaks Report</title>
+            <style>
+              body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:24px;color:#111}
+              .card{border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:16px}
+              h1{margin:0 0 6px;font-size:20px}
+              .meta{color:#555;font-size:13px}
+              table{width:100%;border-collapse:collapse;margin-top:10px}
+              th,td{border-bottom:1px solid #eee;padding:10px;font-size:13px;text-align:left;vertical-align:top}
+              th{background:#fafafa}
+              code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h1>Gitleaks Report</h1>
+              <div class="meta">Fonte: <code>gitleaks.json</code></div>
+            </div>
+
+            <div class="card">
+              <h2 style="margin:0 0 8px;font-size:16px;">Findings</h2>
+              <div style="overflow:auto;max-height:70vh;border:1px solid #f3f4f6;border-radius:10px">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>RuleID</th>
+                      <th>Arquivo</th>
+                      <th>Linha</th>
+                      <th>Commit</th>
+                      <th>Descrição</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+          HTML
+
+          jq -r '
+            (if type=="array" then . else [] end)[] |
+            [
+              (.RuleID // .Rule // "Unknown"),
+              (.File // .Path // ""),
+              ((.StartLine // .Line // "")|tostring),
+              ((.Commit // "")|tostring|.[0:12]),
+              (.Description // .Reason // .Message // "")
+            ] |
+            "<tr>"
+            + "<td><code>" + (.[0]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</code></td>"
+            + "<td>" + (.[1]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</td>"
+            + "<td>" + (.[2]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</td>"
+            + "<td><code>" + (.[3]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</code></td>"
+            + "<td>" + (.[4]|tostring|gsub("&";"&amp;")|gsub("<";"&lt;")|gsub(">";"&gt;")) + "</td>"
+            + "</tr>"
+          ' gitleaks.json >> gitleaks_report.html || true
+
+          if ! grep -q "<tr>" gitleaks_report.html; then
+            echo "<tr><td colspan='5'>Nenhum finding encontrado.</td></tr>" >> gitleaks_report.html
+          fi
+
+          cat >> gitleaks_report.html <<'HTML'
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </body>
+          </html>
+          HTML
+
+      - name: 📤 Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: |
+            gitleaks.json
+            gitleaks_report.html
