@@ -1,0 +1,64 @@
+name: 🔎 SAST - Opengrep (JSON → HTML)
+
+on:
+  pull_request:
+  push:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+jobs:
+  opengrep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: 🛠️ Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Install Opengrep
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash
+          echo "$HOME/.opengrep/cli/latest" >> $GITHUB_PATH
+          opengrep --version
+
+      - name: 🧩 Install jq + prospector2html
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends jq python3 python3-pip
+          python3 -m pip install --upgrade pip
+          python3 -m pip install prospector2html
+
+      - name: 🔎 Run Opengrep (no fail)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Opengrep é compatível com a CLI estilo Semgrep (scan + json/sarif)
+          opengrep scan --config auto \
+            --json-output=opengrep.json \
+            --sarif-output=opengrep.sarif \
+            . || true
+
+          # garante arquivo mesmo se não gerar
+          test -f opengrep.json || echo '{}' > opengrep.json
+
+      - name: 🧾 Convert Opengrep JSON → HTML (prospector2html)
+        shell: bash
+        run: |
+          set -euo pipefail
+          prospector-html -i opengrep.json -o opengrep_report.html --filter semgrep || true
+          test -f opengrep_report.html || echo "<html><body><p>Não foi possível gerar o HTML.</p></body></html>" > opengrep_report.html
+
+      - name: 📤 Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opengrep-report
+          path: |
+            opengrep.json
+            opengrep.sarif
+            opengrep_report.html
