@@ -1,4 +1,4 @@
-name: 🔎 SAST - Opengrep (JSON → HTML)
+name: 🔎 SAST - Opengrep (JSON/SARIF → HTML)
 
 on:
   pull_request:
@@ -16,37 +16,50 @@ jobs:
       - name: 🛠️ Checkout
         uses: actions/checkout@v4
 
-      - name: ⚙️ Install Opengrep
+      - name: ⚙️ Install Opengrep (fix PATH)
         shell: bash
         run: |
           set -euo pipefail
+
           curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash
-          echo "$HOME/.opengrep/cli/latest" >> $GITHUB_PATH
+
+          # Disponível no step atual
+          export PATH="$HOME/.opengrep/cli/latest:$PATH"
+
+          # Disponível nos próximos steps
+          echo "$HOME/.opengrep/cli/latest" >> "$GITHUB_PATH"
+
           opengrep --version
 
-      - name: 🧩 Install jq + prospector2html
+      - name: 🧩 Install prospector2html
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends jq python3 python3-pip
           python3 -m pip install --upgrade pip
           python3 -m pip install prospector2html
 
-      - name: 🔎 Run Opengrep (no fail)
+      - name: 🔎 Run Opengrep (no-fail)
         shell: bash
         run: |
           set -euo pipefail
-          # Opengrep é compatível com a CLI estilo Semgrep (scan + json/sarif)
-          opengrep scan --config auto \
-            --json-output=opengrep.json \
-            --sarif-output=opengrep.sarif \
-            . || true
 
-          # garante arquivo mesmo se não gerar
+          # Alguns builds usam "opengrep scan", outros aceitam "opengrep" estilo semgrep.
+          # Tenta "scan" primeiro, e se não existir, cai pro modo direto.
+          if opengrep --help | grep -qE '^\s*scan\b'; then
+            opengrep scan --config auto \
+              --json-output=opengrep.json \
+              --sarif-output=opengrep.sarif \
+              . || true
+          else
+            opengrep --config auto \
+              --json --output opengrep.json \
+              . || true
+          fi
+
           test -f opengrep.json || echo '{}' > opengrep.json
+          test -f opengrep.sarif || echo '{}' > opengrep.sarif
 
-      - name: 🧾 Convert Opengrep JSON → HTML (prospector2html)
+      - name: 🧾 Convert JSON → HTML (prospector2html)
         shell: bash
         run: |
           set -euo pipefail
