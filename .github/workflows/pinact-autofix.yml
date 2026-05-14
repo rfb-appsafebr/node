@@ -1,0 +1,99 @@
+name: Auto-pin GitHub Actions
+
+on:
+  schedule:
+    # Toda segunda-feira às 9h UTC (= 6h BRT)
+    - cron: '0 9 * * 1'
+  workflow_dispatch:   # permite trigger manual
+
+permissions:
+  contents: write       # criar branch e commit
+  pull-requests: write  # abrir PR
+  # Se você também quer atualizar workflows, precisa de:
+  # workflows: write    # (não funciona com GITHUB_TOKEN — precisa de PAT/App)
+
+jobs:
+  pinact:
+    name: Pin actions and open PR
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install pinact
+        run: |
+          PINACT_VERSION="3.0.0"  # confira a última em github.com/suzuki-shunsuke/pinact/releases
+          curl -sSL -o pinact.tar.gz \
+            "https://github.com/suzuki-shunsuke/pinact/releases/download/v${PINACT_VERSION}/pinact_linux_amd64.tar.gz"
+          tar -xzf pinact.tar.gz
+          sudo mv pinact /usr/local/bin/
+          pinact --version
+
+      - name: Run pinact
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pinact run
+
+      - name: Check for changes
+        id: check
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "✅ Nada para pinificar — todas as actions já estão em SHAs"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "🔧 Mudanças encontradas:"
+            git diff --stat
+          fi
+
+      - name: Create Pull Request
+        if: steps.check.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(security): pin GitHub Actions to commit SHAs"
+          title: "🔒 Pin GitHub Actions to full commit SHAs"
+          body: |
+            ## 🔒 Auto-pin GitHub Actions
+
+            Esta PR foi aberta automaticamente pelo workflow `pinact-autofix.yml`.
+
+            ### O que mudou?
+
+            Actions que estavam referenciadas por tag mutável (`@v1`, `@v4`) foram
+            pinificadas para o **commit SHA imutável** correspondente, mantendo o
+            tag original como comentário.
+
+            ### Por que isso importa?
+
+            Tags do Git são **mutáveis** — quem controla o repo da action pode
+            mover a tag para outro commit. Em março de 2025, `tj-actions/changed-files`
+            foi comprometida exatamente assim, afetando milhares de pipelines.
+
+            Pinificar para SHA garante que o código executado é **imutável** —
+            mesmo se a action for comprometida no futuro, seu workflow continua
+            rodando a versão que você revisou.
+
+            ### Como revisar?
+
+            1. Confira o `git diff` — só devem haver mudanças em `.github/`.
+            2. Para cada SHA novo, você pode validar acessando
+               `https://github.com/<org>/<action>/commit/<SHA>`.
+            3. O comentário ao lado do SHA preserva a versão original (ex: `# v4.1.1`).
+
+            ---
+
+            🤖 Gerada por [pinact](https://github.com/suzuki-shunsuke/pinact)
+            em `${{ github.run_id }}`
+          branch: chore/pinact-autofix
+          delete-branch: true
+          labels: |
+            security
+            automated
+            github-actions
+          # Se quiser auto-assign:
+          # reviewers: seu-usuario
+          # team-reviewers: seu-time
