@@ -5,7 +5,11 @@ on:
     paths:
       - '.github/workflows/**'
       - '.github/actions/**'
-  # Permite rodar manualmente também
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
   workflow_dispatch:
 
 permissions:
@@ -13,7 +17,7 @@ permissions:
 
 jobs:
   validate:
-    name: Check actions are pinned
+    name: Pinned & aged ≥ 7 days
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -21,7 +25,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate pinned actions
+      - name: Validate
         uses: suzuki-shunsuke/pinact-action@28aeb220eb3252ad0d4422dd5d9368e925acbd8d # v1.3.0
         with:
-          skip_push: "true"
+          skip_push: "true"   # apenas valida, não escreve
+          verify: "true"      # valida anotações de versão também
+          min_age: "7"        # falha se SHA for mais novo que 7 dias
